@@ -1,3 +1,4 @@
+const jwt = require('jsonwebtoken')
 const { connectDb } = require('./dbConnect')
 
 exports.createUser = (req, res) => {
@@ -24,11 +25,11 @@ exports.createUser = (req, res) => {
 				isAdmin: false,
 				userRole: 5,
 			}
-			//TODO: create a JWT and send back to token
+			const token = jwt.sign(user, 'doNotShareYourSecret') //Protect this secret
 			res.status(201).send({
 				success: true,
 				message: 'Account created',
-				token: user, // add this to token later
+				token,
 			})
 		})
 		.catch((err) =>
@@ -62,27 +63,44 @@ exports.loginUser = (req, res) => {
 				user.password = undefined
 				return user
 			})
-			res.send({ success: true, message: 'Login successful', token: users[0] })
+			const token = jwt.sign(users[0], 'doNotShareYourSecret')
+			res.send({ success: true, message: 'Login successful', token })
 		})
 		.catch((err) =>
 			res.status(500).send({ success: false, message: err.message, error: err })
 		)
 }
 
-exports.getUsers = (req, res) => { // TODO: Protect this route with JWT
-  const db = connectDb()
-  db.collection('users').get()
-  .then(snapshot => {
-    const users = snapshot.docs.map(doc => {
-      let user = doc.data()
-      user.id = doc.id
-      user.password = undefined
-      return user
-    })
-    res.send({success: true, message: 'Users returned', users})
-  })
-  .catch((err) =>
+exports.getUsers = (req, res) => {
+	//First, make sure the user sent authoriaztion token
+	if (!req.headers.authorization) {
+		return res
+			.status(403)
+			.send({ success: false, message: 'No authorization token found' })
+	}
+
+	// TODO: Protect this route with JWT
+	const decode = jwt.verify(req.headers.authorization, 'doNotShareYourSecret')
+
+	console.log('NEW REQUEST BY:', decode.email)
+
+	if (decode.userRole > 5) {
+		return res.status(401).send({success: false, message: 'Not authorized'})
+	}
+
+	const db = connectDb()
+	db.collection('users')
+		.get()
+		.then((snapshot) => {
+			const users = snapshot.docs.map((doc) => {
+				let user = doc.data()
+				user.id = doc.id
+				user.password = undefined
+				return user
+			})
+			res.send({ success: true, message: 'Users returned', users })
+		})
+		.catch((err) =>
 			res.status(500).send({ success: false, message: err.message, error: err })
 		)
-
 }
